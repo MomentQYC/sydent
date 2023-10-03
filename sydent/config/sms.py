@@ -30,46 +30,55 @@ class SMSConfig(BaseConfig):
 
         # Make sure username and password are bytes otherwise we can't use them with
         # b64encode.
+        self.sms_type = cfg.get("sms", "smsType", fallback="openmarket").encode("UTF-8")
         self.api_username = cfg.get("sms", "username").encode("UTF-8")
         self.api_password = cfg.get("sms", "password").encode("UTF-8")
+        self.twilio_num = cfg.get("sms", "twilio_num", fallback="").encode("UTF-8").split(",")
+        self.twilio_random = cfg.getboolean("sms", "twilio_random", fallback=False)
 
         self.originators: Dict[str, List[Dict[str, str]]] = {}
         self.smsRules = {}
 
         for opt in cfg.options("sms"):
-            if opt.startswith("originators."):
-                country = opt.split(".")[1]
-                rawVal = cfg.get("sms", opt)
-                rawList = [i.strip() for i in rawVal.split(",")]
+            if self.sms_type == b"openmarket":
+                if opt.startswith("originators."):
+                    country = opt.split(".")[1]
+                    rawVal = cfg.get("sms", opt)
+                    rawList = [i.strip() for i in rawVal.split(",")]
 
-                self.originators[country] = []
-                for origString in rawList:
-                    parts = origString.split(":")
-                    if len(parts) != 2:
-                        raise ConfigError(
-                            "Originators must be in form: long:<number>, short:<number> or alpha:<text>, separated by commas"
+                    self.originators[country] = []
+                    for origString in rawList:
+                        parts = origString.split(":")
+                        if len(parts) != 2:
+                            raise ConfigError(
+                                "Originators must be in form: long:<number>, short:<number> or alpha:<text>, separated by commas"
+                            )
+                        if parts[0] not in ["long", "short", "alpha"]:
+                            raise ConfigError(
+                                "Invalid originator type: valid types are long, short and alpha"
+                            )
+                        self.originators[country].append(
+                            {
+                                "type": parts[0],
+                                "text": parts[1],
+                            }
                         )
-                    if parts[0] not in ["long", "short", "alpha"]:
-                        raise ConfigError(
-                            "Invalid originator type: valid types are long, short and alpha"
-                        )
-                    self.originators[country].append(
-                        {
-                            "type": parts[0],
-                            "text": parts[1],
-                        }
-                    )
-            elif opt.startswith("smsrule."):
-                country = opt.split(".")[1]
-                action = cfg.get("sms", opt)
+                elif opt.startswith("smsrule."):
+                    country = opt.split(".")[1]
+                    action = cfg.get("sms", opt)
 
-                if action not in ["allow", "reject"]:
+                    if action not in ["allow", "reject"]:
+                        raise ConfigError(
+                            "Invalid SMS rule action: %s, expecting 'allow' or 'reject'"
+                            % action
+                        )
+
+                    self.smsRules[country] = action
+            elif self.sms_type == b"twilio":
+                if len(self.twilio_num) == 0:
                     raise ConfigError(
-                        "Invalid SMS rule action: %s, expecting 'allow' or 'reject'"
-                        % action
+                        "You must have an outgoing number specified for Twilio"
                     )
-
-                self.smsRules[country] = action
 
         self.msisdn_ratelimit_burst = cfg.getint(
             "sms", "msisdn.ratelimit.burst", fallback=5

@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING, Dict, Optional
 
 import phonenumbers
 
+from sydent import config
 from sydent.db.valsession import ThreePidValSessionStore
-from sydent.sms.openmarket import OpenMarketSMS
 from sydent.util import time_msec
 from sydent.validators import DestinationRejectedException, common
 
@@ -32,7 +32,13 @@ logger = logging.getLogger(__name__)
 class MsisdnValidator:
     def __init__(self, sydent: "Sydent") -> None:
         self.sydent = sydent
-        self.omSms = OpenMarketSMS(sydent)
+        if config.sms.sms_type == "twilio":
+            from sydent.sms.twilio import TwilioSMS
+            self.sdSms = TwilioSMS(sydent)
+        else:
+            from sydent.sms.openmarket import OpenMarketSMS
+            self.sdSms = OpenMarketSMS(sydent)
+
 
         # cache originators & sms rules from config file
         self.originators = self.sydent.config.sms.originators
@@ -94,7 +100,7 @@ class MsisdnValidator:
 
         smsBody = smsBodyTemplate.format(token=token_info.token)
 
-        await self.omSms.sendTextSMS(smsBody, msisdn, originator)
+        await self.sdSms.sendTextSMS(smsBody, msisdn, originator)
 
         valSessionStore.setSendAttemptNumber(valSession.id, send_attempt)
 
